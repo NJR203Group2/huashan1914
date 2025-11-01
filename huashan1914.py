@@ -1,8 +1,8 @@
 import urllib.request as req
 import bs4 as bs
 import ssl
-import json
 import os
+import json
 
 # 建立不驗證 SSL 憑證的 context
 context = ssl._create_unverified_context()
@@ -30,7 +30,8 @@ else:
 print(f"總共有 {total_pages} 頁")
 
 # Step 2 開始逐頁爬取
-exhibitions = []
+exhibitions = []  # ← 新增這一行，開始收集所有展覽資料
+
 for page in range(1, total_pages + 1):
     page_url = f"{base_url}?index={page}"
     print(f"\n正在爬取第 {page} 頁：{page_url}")
@@ -42,11 +43,41 @@ for page in range(1, total_pages + 1):
     items = html.find_all("li", {"class": "item-static"})
     for li in items:
         a_tag = li.find("a")
-        title = li.get_text(strip=True)
-        if a_tag and "href" in a_tag.attrs:
-            link = "https://www.huashan1914.com" + a_tag["href"]
-            exhibitions.append({"title": title, "url": link})
-            print(f"- {title} → {link}")
+        if not a_tag or "href" not in a_tag.attrs:
+            continue
+
+        # 各欄位的抽取
+        name_tag = li.find("div", {"class": "card-text-name"})
+        date_tag = li.find("div", {"class": "event-date"})
+        time_tag = li.find("div", {"class": "event-time"})
+        type_tag = li.find("div", {"class": "event-list-type"})
+
+        title = name_tag.get_text(strip=True) if name_tag else ""
+        date_text = date_tag.get_text(strip=True) if date_tag else ""
+        time_text = time_tag.get_text(strip=True) if time_tag else ""
+        type_text = ""
+        if type_tag:
+            span_list = type_tag.find_all("span")
+            type_text = "/".join(span.get_text(strip=True) for span in span_list)
+
+        link = "https://www.huashan1914.com" + a_tag["href"]
+
+        # 印出到終端機
+        print("-" * 80)
+        print(f"展覽名稱：{title}")
+        print(f"展覽日期：{date_text}")
+        print(f"開放時間：{time_text}")
+        print(f"展覽類型：{type_text}")
+        print(f"展覽連結：{link}")
+
+        # 加入清單以便輸出成 JSON
+        exhibitions.append({
+            "title": title,
+            "date": date_text,
+            "time": time_text,
+            "type": type_text,
+            "url": link
+        })
 
 # Step 3 儲存成 JSON 檔
 output_path = os.path.join(downloads_folder, "huashan_exhibitions.json")
