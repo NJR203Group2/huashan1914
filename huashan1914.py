@@ -3,6 +3,7 @@ import bs4 as bs
 import ssl
 import os
 import json
+import time
 
 # 建立不驗證 SSL 憑證的 context
 context = ssl._create_unverified_context()
@@ -30,7 +31,7 @@ else:
 print(f"總共有 {total_pages} 頁")
 
 # Step 2 開始逐頁爬取
-exhibitions = []  # ← 新增這一行，開始收集所有展覽資料
+exhibitions = []
 
 for page in range(1, total_pages + 1):
     page_url = f"{base_url}?index={page}"
@@ -46,42 +47,93 @@ for page in range(1, total_pages + 1):
         if not a_tag or "href" not in a_tag.attrs:
             continue
 
-        # 各欄位的抽取
-        name_tag = li.find("div", {"class": "card-text-name"})
-        date_tag = li.find("div", {"class": "event-date"})
-        time_tag = li.find("div", {"class": "event-time"})
-        type_tag = li.find("div", {"class": "event-list-type"})
+        detail_url = "https://www.huashan1914.com" + a_tag["href"]
 
-        title = name_tag.get_text(strip=True) if name_tag else ""
-        date_text = date_tag.get_text(strip=True) if date_tag else ""
-        time_text = time_tag.get_text(strip=True) if time_tag else ""
-        type_text = ""
-        if type_tag:
-            span_list = type_tag.find_all("span")
-            type_text = "/".join(span.get_text(strip=True) for span in span_list)
-
-        link = "https://www.huashan1914.com" + a_tag["href"]
-
-        # 印出到終端機
         print("-" * 80)
-        print(f"展覽名稱：{title}")
-        print(f"展覽日期：{date_text}")
-        print(f"開放時間：{time_text}")
-        print(f"展覽類型：{type_text}")
-        print(f"展覽連結：{link}")
+        print(f"進入內層頁面：{detail_url}")
 
-        # 加入清單以便輸出成 JSON
-        exhibitions.append({
-            "title": title,
-            "date": date_text,
-            "time": time_text,
-            "type": type_text,
-            "url": link
-        })
+        try:
+            response_inner = req.urlopen(detail_url, context=context)
+            content_inner = response_inner.read()
+            html_inner = bs.BeautifulSoup(content_inner, "html.parser")
+
+            # ======= 內頁資料擷取 =======
+
+            # 展覽名稱
+            title_tag = html_inner.find("div", {"class": "article-title page"})
+            title = title_tag.get_text(strip=True) if title_tag else ""
+
+            # 展覽日期與時間
+            date_block = html_inner.find("div", {"class": "card-datetime multiple"})
+            if date_block:
+                date_parts = date_block.find_all("div", {"class": "card-date"})
+                time_tag = date_block.find("div", {"class": "card-time"})
+                if len(date_parts) >= 2:
+                    date_text = (
+                        date_parts[0].get_text(strip=True) + " ~ " + date_parts[1].get_text(strip=True)
+                    )
+                elif len(date_parts) == 1:
+                    date_text = date_parts[0].get_text(strip=True)
+                else:
+                    date_text = ""
+                time_text = time_tag.get_text(strip=True) if time_tag else ""
+            else:
+                date_text = ""
+                time_text = ""
+
+            # 展覽類型
+            type_block = html_inner.find("div", {"id": "divChips"})
+            type_text = ""
+            if type_block:
+                chip_spans = type_block.find_all("span", {"class": "chip-name"})
+                type_text = "/".join(span.get_text(strip=True) for span in chip_spans)
+
+            # 主辦單位
+            organizer_block = html_inner.find("div", {"class": "organizer"})
+            organizer_text = ""
+            if organizer_block:
+                organizers = organizer_block.find_all("div", {"class": "inlineDiv"})
+                organizer_text = "/".join(div.get_text(strip=True) for div in organizers)
+
+            # 活動地點
+            location_block = html_inner.find("div", {"class": "address"})
+            location_text = ""
+            location_url = ""
+            if location_block:
+                a_tag_loc = location_block.find("a", {"class": "openMap"})
+                if a_tag_loc:
+                    location_text = a_tag_loc.get_text(strip=True)
+                    location_url = "https://www.huashan1914.com" + a_tag_loc.get("href", "")
+
+            # ======= 結果印出 =======
+            print(f"展覽名稱：{title}")
+            print(f"展覽日期：{date_text}")
+            print(f"開放時間：{time_text}")
+            print(f"展覽類型：{type_text}")
+            print(f"主辦單位：{organizer_text}")
+            print(f"活動地點：{location_text}")
+            print(f"活動地點的位置連結：{location_url}")
+
+            # ======= 加入清單 =======
+            exhibitions.append({
+                "title": title,
+                "date": date_text,
+                "time": time_text,
+                "type": type_text,
+                "organizer": organizer_text,
+                "location": location_text,
+                "location_url": location_url,
+                "url": detail_url
+            })
+
+            time.sleep(0.5)  # 防止過於頻繁請求
+
+        except Exception as e:
+            print(f"無法讀取 {detail_url}：{e}")
 
 # Step 3 儲存成 JSON 檔
-output_path = os.path.join(downloads_folder, "huashan_exhibitions.json")
+output_path = os.path.join(downloads_folder, "huashan_exhibitions_detail.json")
 with open(output_path, "w", encoding="utf-8") as f:
     json.dump(exhibitions, f, ensure_ascii=False, indent=2)
 
-print(f"\n已完成爬取，結果輸出至：{output_path}")
+print(f"\n已完成所有內層展覽資料爬取，結果輸出至：{output_path}")
