@@ -105,6 +105,24 @@ for page in range(1, total_pages + 1):
                     location_text = a_tag_loc.get_text(strip=True)
                     location_url = "https://www.huashan1914.com" + a_tag_loc.get("href", "")
 
+            # 展覽介紹
+            description_block = html_inner.find("div", {"class": "card-text-info"})
+            description_text = ""
+            if description_block:
+                # 將所有段落文字組成一段
+                ps = description_block.find_all("p")
+                if ps:
+                    description_text = "\n".join(p.get_text(strip=True) for p in ps)
+                else:
+                    description_text = description_block.get_text(strip=True)
+
+            # 聯絡資訊
+            contact_block = html_inner.find("div", {"class": "article-contact"})
+            contact_text = ""
+            if contact_block:
+                # 聯絡資訊可能在 <div> 或 <li> 中
+                contact_text = contact_block.get_text(strip=True)
+
             # ======= 結果印出 =======
             print(f"展覽名稱：{title}")
             print(f"展覽日期：{date_text}")
@@ -113,6 +131,8 @@ for page in range(1, total_pages + 1):
             print(f"主辦單位：{organizer_text}")
             print(f"活動地點：{location_text}")
             print(f"活動地點的位置連結：{location_url}")
+            print(f"展覽介紹：{description_text}")
+            print(f"聯絡資訊：{contact_text}")
 
             # ======= 加入清單 =======
             exhibitions.append({
@@ -123,6 +143,8 @@ for page in range(1, total_pages + 1):
                 "organizer": organizer_text,
                 "location": location_text,
                 "location_url": location_url,
+                "description": description_text,
+                "contact_info": contact_text,
                 "url": detail_url
             })
 
