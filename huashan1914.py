@@ -67,9 +67,10 @@ for page in range(1, total_pages + 1):
             date_block = html_inner.find("div", class_=lambda c: c and "card-datetime" in c)
             date_text = ""
             time_text = ""
+            time_detail_text = ""  # 新增項目「活動時間說明」
 
             if date_block:
-                # 抓日期區塊
+                # 抓日期
                 date_parts = date_block.find_all("div", {"class": "card-date"})
                 if len(date_parts) >= 2:
                     date_text = (
@@ -78,19 +79,16 @@ for page in range(1, total_pages + 1):
                 elif len(date_parts) == 1:
                     date_text = date_parts[0].get_text(strip=True)
 
-                # 抓時間（主要來源）
+                # 抓主要時間
                 time_tag = date_block.find("div", {"class": "card-time"})
                 if time_tag:
                     time_text = time_tag.get_text(strip=True)
-                else:
-                    # 特例：部分頁面時間放在 card-text-info 區塊（例如 PEPERO DAY）
-                    # 找與日期區塊最近的 card-text-info
-                    alt_time_block = date_block.find_next("div", {"class": "card-text-info"})
-                    if alt_time_block:
-                        alt_time = alt_time_block.get_text(strip=True)
-                        # 若內容中包含 ":" 或 "AM"/"PM"，幾乎可確定為時間資訊
-                        if any(x in alt_time for x in [":", "AM", "PM", "～", "~"]):
-                            time_text = alt_time
+
+                # 抓「活動時間說明」（緊接在 card-datetime 後）
+                next_block = date_block.find_next_sibling()
+                if next_block and next_block.name == "div" and "card-text-info" in (next_block.get("class") or []):
+                    # 如果下一個 block 是 card-text-info，視為活動時間補充說明
+                    time_detail_text = next_block.get_text(strip=True)
 
             # 展覽類型
             type_block = html_inner.find("div", {"id": "divChips"})
@@ -106,15 +104,6 @@ for page in range(1, total_pages + 1):
                 organizers = organizer_block.find_all("div", {"class": "inlineDiv"})
                 organizer_text = "/".join(div.get_text(strip=True) for div in organizers)
 
-            # 活動地點
-            # location_block = html_inner.find("div", {"class": "address"})
-            # location_text = ""
-            # location_url = ""
-            # if location_block:
-            #     a_tag_loc = location_block.find("a", {"class": "openMap"})
-            #     if a_tag_loc:
-            #         location_text = a_tag_loc.get_text(strip=True)
-            #         location_url = "https://www.huashan1914.com" + a_tag_loc.get("href", "")
             # ===== 活動地點（location & location_url）=====
             location_block = html_inner.find("div", {"class": "address"})
             location_text = ""
@@ -177,6 +166,7 @@ for page in range(1, total_pages + 1):
             print(f"展覽名稱：{title}")
             print(f"展覽日期：{date_text}")
             print(f"開放時間：{time_text}")
+            print(f"活動時間說明：{time_detail_text}")
             print(f"展覽類型：{type_text}")
             print(f"主辦單位：{organizer_text}")
             print(f"活動地點：{location_text}")
@@ -189,6 +179,7 @@ for page in range(1, total_pages + 1):
                 "title": title,
                 "date": date_text,
                 "time": time_text,
+                "time_detail": time_detail_text,
                 "type": type_text,
                 "organizer": organizer_text,
                 "location": location_text,
