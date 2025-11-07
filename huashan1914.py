@@ -12,8 +12,7 @@ base_url = "https://www.huashan1914.com/w/huashan1914/exhibition"
 
 # 建立 Downloads 資料夾
 downloads_folder = os.path.join(os.getcwd(), "Downloads")
-if not os.path.exists(downloads_folder):
-    os.makedirs(downloads_folder)
+os.makedirs(downloads_folder, exist_ok=True)
 
 # 先抓第一頁來判斷總頁數
 response = req.urlopen(base_url, context=context)
@@ -30,7 +29,7 @@ else:
 
 print(f"總共有 {total_pages} 頁")
 
-# Step 2 開始逐頁爬取
+# Step 2 開始逐頁爬取展覽資訊
 exhibitions = []
 
 for page in range(1, total_pages + 1):
@@ -64,30 +63,25 @@ for page in range(1, total_pages + 1):
             title = title_tag.get_text(strip=True) if title_tag else ""
 
             # 展覽日期與時間
+            date_text, time_text, time_detail_text = "", "", ""
             date_block = html_inner.find("div", class_=lambda c: c and "card-datetime" in c)
-            date_text = ""
-            time_text = ""
-            time_detail_text = ""  # 新增項目「活動時間說明」
 
             if date_block:
-                # 抓日期
+                # 日期
                 date_parts = date_block.find_all("div", {"class": "card-date"})
                 if len(date_parts) >= 2:
-                    date_text = (
-                        date_parts[0].get_text(strip=True) + " ~ " + date_parts[1].get_text(strip=True)
-                    )
+                    date_text = f"{date_parts[0].get_text(strip=True)} ~ {date_parts[1].get_text(strip=True)}"
                 elif len(date_parts) == 1:
                     date_text = date_parts[0].get_text(strip=True)
 
-                # 抓主要時間
+                # 主要時間
                 time_tag = date_block.find("div", {"class": "card-time"})
                 if time_tag:
                     time_text = time_tag.get_text(strip=True)
 
-                # 抓「活動時間說明」（緊接在 card-datetime 後）
+                # 活動時間說明（緊接在 card-datetime 後）
                 next_block = date_block.find_next_sibling()
                 if next_block and next_block.name == "div" and "card-text-info" in (next_block.get("class") or []):
-                    # 如果下一個 block 是 card-text-info，視為活動時間補充說明
                     time_detail_text = next_block.get_text(strip=True)
 
             # 展覽類型
@@ -98,71 +92,92 @@ for page in range(1, total_pages + 1):
                 type_text = "/".join(span.get_text(strip=True) for span in chip_spans)
 
             # 主辦單位
-            organizer_block = html_inner.find("div", {"class": "organizer"})
             organizer_text = ""
+            organizer_block = html_inner.find("div", {"class": "organizer"})
             if organizer_block:
                 organizers = organizer_block.find_all("div", {"class": "inlineDiv"})
                 organizer_text = "/".join(div.get_text(strip=True) for div in organizers)
 
             # ===== 活動地點（location & location_url）=====
+            location_text, location_url = "", ""
             location_block = html_inner.find("div", {"class": "address"})
-            location_text = ""
-            location_url = ""
-
             if location_block:
-                # 找出所有 <a class="openMap">
                 a_tags = location_block.find_all("a", {"class": "openMap"})
                 if a_tags:
-                    locations = []
-                    urls = []
+                    locations, urls = [], []
                     for a_tag in a_tags:
                         text = a_tag.get_text(strip=True)
                         href = a_tag.get("href", "")
-                        # 修正相對路徑
                         if href.startswith("/"):
                             href = "https://www.huashan1914.com" + href
                         if text:
                             locations.append(text)
                         if href:
                             urls.append(href)
-                    # 用 "/" 串接所有地點與連結
                     location_text = " / ".join(locations)
                     location_url = " / ".join(urls)
 
-            # 展覽介紹
+            # ===== 展覽介紹 =====
             desc_blocks = html_inner.find_all("div", class_="card-text-info")
             desc_texts = []
-
             for block in desc_blocks:
-                # 跳過內容太短或明顯像時間格式的
                 text = block.get_text(strip=True)
                 if not text:
                     continue
-
-                # 過濾掉時間格式樣式（例如 "(平日)16:00 ~20:00"）
                 if any(x in text for x in [":", "AM", "PM", "～", "~"]) and len(text) < 60:
-                    # 時間通常短、包含冒號；描述通常長很多
                     continue
-
-                # 過濾掉緊接在 card-datetime 後的那個 block（也是時間補充）
                 prev = block.find_previous_sibling()
                 if prev and "card-datetime" in (prev.get("class") or []):
                     continue
-
-                # 如果通過上述條件，就視為真正的展覽介紹
                 desc_texts.append(text)
-
-            # 最後合併成完整文字（以換行區隔）
             description_text = "\n".join(desc_texts).strip()
 
-            # 聯絡資訊
-            contact_block = html_inner.find("div", {"class": "article-contact"})
+            # ===== 聯絡資訊 =====
             contact_text = ""
+            contact_block = html_inner.find("div", {"class": "article-contact"})
             if contact_block:
-                # 聯絡資訊可能在 <div> 或 <li> 中
                 contact_text = contact_block.get_text(strip=True)
 
-            # ======= 結果印出 =======
+            # ===== 官方粉絲團(IG)、活動官網、加入行事曆、官方粉絲團(FB) =====
+            official_ig = ""
+            official_website = ""
+            calendar_links = []
+            official_fb = ""
+
+            # --- IG 與活動官網 ---
+            btn_blocks = html_inner.find_all("div", class_="card-btn")
+            for div in btn_blocks:
+                a_tag = div.find("a")
+                if not a_tag:
+                    continue
+                text = a_tag.get_text(strip=True)
+                href = a_tag.get("href", "").strip()
+                if "官方粉絲團(IG)" in text:
+                    official_ig = href
+                elif "活動官網" in text:
+                    official_website = href
+
+            # --- 加入你的行事曆 ---
+            calendar_block = html_inner.find("div", {"class": "card-calendar"})
+            if calendar_block:
+                a_tags = calendar_block.find_all("a")
+                for a in a_tags:
+                    link_text = a.get_text(strip=True)
+                    href = a.get("href", "")
+                    calendar_links.append({"text": link_text, "url": href})
+
+            # --- 官方粉絲團(FB) ---
+            fb_block = html_inner.find("div", {"class": "card-box border"}, onclick=True)
+            if fb_block:
+                onclick_value = fb_block.get("onclick", "")
+                if "facebook.com" in onclick_value:
+                    # 從 onclick="window.open('https://www.facebook.com/...')" 中取出 URL
+                    import re
+                    match = re.search(r"window\.open\('([^']+)'\)", onclick_value)
+                    if match:
+                        official_fb = match.group(1)
+
+            # ======= 印出結果 =======
             print(f"展覽名稱：{title}")
             print(f"展覽日期：{date_text}")
             print(f"開放時間：{time_text}")
@@ -170,9 +185,13 @@ for page in range(1, total_pages + 1):
             print(f"展覽類型：{type_text}")
             print(f"主辦單位：{organizer_text}")
             print(f"活動地點：{location_text}")
-            print(f"活動地點的位置連結：{location_url}")
+            print(f"活動地點位置連結：{location_url}")
             print(f"展覽介紹：{description_text}")
             print(f"聯絡資訊：{contact_text}")
+            print(f"官方粉絲團(IG)：{official_ig}")
+            print(f"活動官網：{official_website}")
+            print(f"加入你的行事曆：{calendar_links}")
+            print(f"官方粉絲團(FB)：{official_fb}")
 
             # ======= 加入清單 =======
             exhibitions.append({
@@ -186,17 +205,91 @@ for page in range(1, total_pages + 1):
                 "location_url": location_url,
                 "description": description_text,
                 "contact_info": contact_text,
+                "official_ig": official_ig,
+                "official_website": official_website,
+                "calendar_links": calendar_links,
+                "official_fb": official_fb,
                 "url": detail_url
             })
 
-            time.sleep(0.5)  # 防止過於頻繁請求
+            time.sleep(0.5)
 
         except Exception as e:
             print(f"無法讀取 {detail_url}：{e}")
 
-# Step 3 儲存成 JSON 檔
+# ===== Step 3: 抓取網站底部 footer 資訊 =====
+footer_info = {}
+footer_left = html.find("div", {"class": "footer-left-side"})
+
+if footer_left:
+    sections = footer_left.find_all("div", recursive=False)
+    for sec in sections:
+        title_div = sec.find("div", class_="title")
+        if not title_div:
+            continue
+        title_text = title_div.get_text(strip=True)
+        li_list = sec.find_all("li")
+
+        # 「如何來華山」
+        if "如何來華山" in title_text:
+            address = ""
+            open_time = ""
+            links = []
+            if len(li_list) >= 1:
+                address = li_list[0].get_text(strip=True).replace("園區地址：", "")
+            if len(li_list) >= 2:
+                open_time = li_list[1].get_text(strip=True).replace("開放時間：", "")
+            if len(li_list) >= 3:
+                for a in li_list[2].find_all("a"):
+                    text = a.get_text(strip=True)
+                    href = a.get("href", "")
+                    if href and not href.startswith("http"):
+                        href = "https://www.huashan1914.com/w/huashan1914/" + href.lstrip("/")
+                    links.append({"text": text, "url": href})
+            footer_info["how_to_come"] = {
+                "address": address,
+                "open_time": open_time,
+                "links": links
+            }
+
+        # 「洽公(場地租借)聯繫」
+        elif "洽公" in title_text:
+            phone = fax = office_hours = ""
+            if len(li_list) >= 1:
+                phone = li_list[0].get_text(strip=True).replace("電話：", "")
+            if len(li_list) >= 2:
+                fax = li_list[1].get_text(strip=True).replace("傳真：", "")
+            if len(li_list) >= 3:
+                office_hours = li_list[2].get_text(strip=True)
+            footer_info["rent_contact"] = {
+                "phone": phone,
+                "fax": fax,
+                "office_hours": office_hours
+            }
+
+        # 「園區服務聯繫」
+        elif "園區服務聯繫" in title_text:
+            phone = fax = service_hours = ""
+            if len(li_list) >= 1:
+                phone = li_list[0].get_text(strip=True).replace("電話：", "")
+            if len(li_list) >= 2:
+                fax = li_list[1].get_text(strip=True).replace("傳真：", "")
+            if len(li_list) >= 3:
+                service_hours = li_list[2].get_text(strip=True)
+            footer_info["service_contact"] = {
+                "phone": phone,
+                "fax": fax,
+                "service_hours": service_hours
+            }
+
+# Step 4 儲存 JSON
+output_data = {
+    "exhibitions": exhibitions,
+    "footer_info": footer_info
+}
+
 output_path = os.path.join(downloads_folder, "huashan_exhibitions_detail.json")
 with open(output_path, "w", encoding="utf-8") as f:
-    json.dump(exhibitions, f, ensure_ascii=False, indent=2)
+    json.dump(output_data, f, ensure_ascii=False, indent=2)
 
-print(f"\n已完成所有內層展覽資料爬取，結果輸出至：{output_path}")
+print(f"\n已完成所有資料爬取，結果輸出至：{output_path}")
