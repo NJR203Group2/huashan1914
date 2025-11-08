@@ -4,6 +4,7 @@ import ssl
 import os
 import json
 import time
+from urllib.parse import quote
 
 # 建立不驗證 SSL 憑證的 context
 context = ssl._create_unverified_context()
@@ -158,13 +159,76 @@ for page in range(1, total_pages + 1):
                     official_website = href
 
             # --- 加入你的行事曆 ---
+            # calendar_block = html_inner.find("div", {"class": "card-calendar"})
+            # if calendar_block:
+            #     a_tags = calendar_block.find_all("a")
+            #     for a in a_tags:
+            #         link_text = a.get_text(strip=True)
+            #         href = a.get("href", "")
+            #         calendar_links.append({"text": link_text, "url": href})
+            calendar_links = []
+            calendar_base = "https://www.huashan1914.com/Event/Calendar"
+
+            # 原始 HTML 塊仍保留作為備援
             calendar_block = html_inner.find("div", {"class": "card-calendar"})
             if calendar_block:
                 a_tags = calendar_block.find_all("a")
                 for a in a_tags:
                     link_text = a.get_text(strip=True)
-                    href = a.get("href", "")
+                    href = a.get("href", "").strip()
                     calendar_links.append({"text": link_text, "url": href})
+
+            # 若都是 javascript:; 代表沒有真實連結 → 自行推測組合
+            if all(link["url"].startswith("javascript") for link in calendar_links) and title and date_text:
+                # 嘗試分解日期與時間
+                import re
+                from datetime import datetime
+
+                # 預設時間
+                start_time = "10:00"
+                end_time = "19:00"
+
+                # 從 time_text 裡抓 AM/PM 格式的時間
+                if time_text:
+                    times = re.findall(r"(\d{1,2}:\d{2}\s?(?:AM|PM)?)", time_text)
+                    if len(times) >= 2:
+                        start_time, end_time = times[:2]
+
+                # 從 date_text 拆出起訖日期
+                dates = re.findall(r"(\d{4}\.\d{2}\.\d{2})", date_text.replace("/", "."))
+                if len(dates) >= 2:
+                    dts = dates[0].replace(".", "/")
+                    dte = dates[1].replace(".", "/")
+                elif len(dates) == 1:
+                    dts = dte = dates[0].replace(".", "/")
+                else:
+                    dts = dte = ""
+
+                # 組出參數
+                location_encoded = quote(location_text or "")
+                title_encoded = quote(title)
+                dts_encoded = quote(f"{dts} {start_time}")
+                dte_encoded = quote(f"{dte} {end_time}")
+
+                # 建立三種行事曆連結
+                calendar_links = [
+                    {
+                        "text": "Google Calendar",
+                        "url": f"{calendar_base}?CalendarType=Google&Title={title_encoded}&DTS={dts_encoded}&DTE={dte_encoded}&Location={location_encoded}"
+                    },
+                    {
+                        "text": "iCal ( iOS )",
+                        "url": f"{calendar_base}?CalendarType=iCal&Title={title_encoded}&DTS={dts_encoded}&DTE={dte_encoded}&Location={location_encoded}"
+                    },
+                    {
+                        "text": "Outlook",
+                        "url": f"{calendar_base}?CalendarType=Outlook&Title={title_encoded}&DTS={dts_encoded}&DTE={dte_encoded}&Location={location_encoded}"
+                    },
+                    {
+                        "text": "收藏至會員專區",
+                        "url": "javascript:;"
+                    }
+                ]
 
             # --- 官方粉絲團(FB) ---
             fb_block = html_inner.find("div", {"class": "card-box border"}, onclick=True)
