@@ -361,12 +361,14 @@ with open(output_path, "w", encoding="utf-8") as f:
 print(f"\n已完成所有資料爬取，結果輸出至：{output_path}")
 
 # ======================================================
-# Step 5：CSV 輸出
+# Step 5：CSV 輸出（展覽資訊 + Footer 資訊）
 # ======================================================
-csv_output_path = os.path.join(downloads_folder, "huashan_exhibitions_detail.csv")
+import csv
 
-# 準備要輸出的欄位（與 JSON 一致）
-csv_fields = [
+# === (1) 展覽資訊 CSV ===
+csv_exhibition_path = os.path.join(downloads_folder, "huashan_exhibitions_detail.csv")
+
+csv_fields_exhibition = [
     "title", "date", "time", "time_detail",
     "type", "organizer", "location", "location_url",
     "description", "contact_info",
@@ -374,13 +376,70 @@ csv_fields = [
     "poster_urls", "poster_files", "url"
 ]
 
-# 寫出 CSV
-with open(csv_output_path, "w", newline="", encoding="utf-8-sig") as csvfile:
-    writer = csv.DictWriter(csvfile, fieldnames=csv_fields)
+with open(csv_exhibition_path, "w", newline="", encoding="utf-8-sig") as f:
+    writer = csv.DictWriter(f, fieldnames=csv_fields_exhibition)
     writer.writeheader()
     for ex in exhibitions:
-        # 轉換列表型欄位為字串（避免 list 寫入時出錯）
-        row = {k: (", ".join(v) if isinstance(v, list) else v) for k, v in ex.items() if k in csv_fields}
-        writer.writerow(row)
+        row = ex.copy()
+        # list 轉字串
+        for key in ["poster_urls", "poster_files"]:
+            if isinstance(row.get(key), list):
+                row[key] = "; ".join(row[key])
+        writer.writerow({k: row.get(k, "") for k in csv_fields_exhibition})
 
-print(f"已同時輸出 CSV 檔案：{csv_output_path}")
+print(f"[OK] 已輸出展覽資訊 CSV：{csv_exhibition_path}")
+
+# === (2) Footer 資訊 CSV ===
+csv_footer_path = os.path.join(downloads_folder, "huashan_venue_info.csv")
+
+# 統一欄位設計，確保所有 section 都能對齊
+csv_fields_footer = ["section", "address", "open_time", "phone", "fax", "office_hours", "service_hours", "links"]
+
+footer_rows = []
+
+# how_to_come
+how = footer_info.get("how_to_come", {})
+footer_rows.append({
+    "section": "how_to_come",
+    "address": how.get("address", ""),
+    "open_time": how.get("open_time", ""),
+    "phone": "",
+    "fax": "",
+    "office_hours": "",
+    "service_hours": "",
+    "links": "; ".join([f"{link['text']} ({link['url']})" for link in how.get("links", [])])
+})
+
+# rent_contact
+rent = footer_info.get("rent_contact", {})
+footer_rows.append({
+    "section": "rent_contact",
+    "address": "",
+    "open_time": "",
+    "phone": rent.get("phone", ""),
+    "fax": rent.get("fax", ""),
+    "office_hours": rent.get("office_hours", ""),
+    "service_hours": "",
+    "links": ""
+})
+
+# service_contact
+service = footer_info.get("service_contact", {})
+footer_rows.append({
+    "section": "service_contact",
+    "address": "",
+    "open_time": "",
+    "phone": service.get("phone", ""),
+    "fax": service.get("fax", ""),
+    "office_hours": "",
+    "service_hours": service.get("service_hours", ""),
+    "links": ""
+})
+
+# 寫出 CSV
+with open(csv_footer_path, "w", newline="", encoding="utf-8-sig") as f:
+    writer = csv.DictWriter(f, fieldnames=csv_fields_footer)
+    writer.writeheader()
+    writer.writerows(footer_rows)
+
+print(f"[OK] 已輸出 Footer 資訊 CSV：{csv_footer_path}")
